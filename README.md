@@ -10,5 +10,4 @@ A [Prometheus](https://prometheus.io/) exporter for the
 
 ## TODO
 - Only refresh session every _x_ minutes rather than on every call
-- Investigate better way of stubbing out API calls given the plug HTTP API
 - Include energy usage as a metric?

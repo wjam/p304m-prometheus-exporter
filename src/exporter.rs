@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
@@ -11,17 +12,52 @@ use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::registry::Registry;
 use prometheus_client_derive_encode::EncodeLabelSet;
 use std::sync::Arc;
-#[allow(unused_imports)]
 use tapo::Plug;
-#[allow(unused_imports)]
-use tapo::responses::{
-    AutoOffStatus, ChargingStatus, DefaultPlugState, OvercurrentStatus, PowerProtectionStatus,
-};
 use tapo::responses::{
     CurrentPowerResult, DeviceInfoPowerStripResult, PowerStripPlugEnergyMonitoringResult,
 };
 use tapo::{Error, PowerStripEnergyMonitoringHandler};
 use tokio::sync::RwLock;
+
+#[async_trait]
+pub trait TapoClient {
+    async fn refresh_session(&mut self) -> Result<(), Error>;
+    async fn device_info(&self) -> Result<DeviceInfoPowerStripResult, Error>;
+    async fn child_devices(&self) -> Result<Vec<PowerStripPlugEnergyMonitoringResult>, Error>;
+    async fn get_power_for_plug(&self, device_id: &str) -> Result<CurrentPowerResult, Error>;
+}
+
+#[derive(Debug)]
+pub struct PowerStripClient {
+    pub client: PowerStripEnergyMonitoringHandler,
+}
+
+#[async_trait]
+impl TapoClient for PowerStripClient {
+    async fn refresh_session(&mut self) -> Result<(), Error> {
+        match self.client.refresh_session().await {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn device_info(&self) -> Result<DeviceInfoPowerStripResult, Error> {
+        self.client.get_device_info().await
+    }
+
+    async fn child_devices(&self) -> Result<Vec<PowerStripPlugEnergyMonitoringResult>, Error> {
+        self.client.get_child_device_list().await
+    }
+
+    async fn get_power_for_plug(&self, device_id: &str) -> Result<CurrentPowerResult, Error> {
+        let plug = self
+            .client
+            .plug(Plug::ByDeviceId(device_id.to_string()))
+            .await?;
+
+        plug.get_current_power().await
+    }
+}
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
 pub struct PowerUse {
@@ -38,132 +74,11 @@ pub struct DeviceInfo {
     pub firmware_version: String,
 }
 
-#[derive(Debug)]
-pub struct Client {
-    // As this struct is having to pull double duty - real implementation and a test mock - this field may not be used.
-    pub _client: Option<PowerStripEnergyMonitoringHandler>,
-}
-
-impl Client {
-    #[cfg(not(test))]
-    async fn refresh_session(&mut self) -> Result<(), Error> {
-        let client = self._client.as_mut().unwrap();
-        match client.refresh_session().await {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e),
-        }
-    }
-
-    #[cfg(not(test))]
-    async fn device_info(&self) -> Result<DeviceInfoPowerStripResult, Error> {
-        self._client.as_ref().unwrap().get_device_info().await
-    }
-
-    #[cfg(not(test))]
-    async fn child_devices(&self) -> Result<Vec<PowerStripPlugEnergyMonitoringResult>, Error> {
-        self._client.as_ref().unwrap().get_child_device_list().await
-    }
-
-    #[cfg(not(test))]
-    async fn get_power_for_plug(&self, device_id: String) -> Result<CurrentPowerResult, Error> {
-        let plug = self
-            ._client
-            .as_ref()
-            .unwrap()
-            .plug(Plug::ByDeviceId(device_id))
-            .await?;
-
-        plug.get_current_power().await
-    }
-
-    #[cfg(test)]
-    async fn refresh_session(&mut self) -> Result<(), Error> {
-        Ok(())
-    }
-
-    #[cfg(test)]
-    async fn device_info(&self) -> Result<DeviceInfoPowerStripResult, Error> {
-        Ok(DeviceInfoPowerStripResult {
-            avatar: "".to_string(),
-            device_id: "123".to_string(),
-            fw_id: "".to_string(),
-            fw_ver: "".to_string(),
-            has_set_location_info: false,
-            hw_id: "".to_string(),
-            hw_ver: "".to_string(),
-            ip: "".to_string(),
-            lang: "".to_string(),
-            latitude: None,
-            longitude: None,
-            mac: "".to_string(),
-            model: "catwalk".to_string(),
-            oem_id: "".to_string(),
-            region: None,
-            rssi: 0,
-            signal_level: 0,
-            specs: "".to_string(),
-            ssid: "".to_string(),
-            time_diff: 0,
-            r#type: "".to_string(),
-        })
-    }
-
-    #[cfg(test)]
-    async fn child_devices(&self) -> Result<Vec<PowerStripPlugEnergyMonitoringResult>, Error> {
-        let mut l = Vec::new();
-        l.push(PowerStripPlugEnergyMonitoringResult {
-            auto_off_remain_time: 0,
-            auto_off_status: AutoOffStatus::On,
-            avatar: "".to_string(),
-            bind_count: 0,
-            category: "".to_string(),
-            default_states: DefaultPlugState::LastStates {},
-            charging_status: ChargingStatus::Finished,
-            device_id: "456".to_string(),
-            device_on: false,
-            fw_id: "".to_string(),
-            fw_ver: "".to_string(),
-            has_set_location_info: false,
-            hw_id: "".to_string(),
-            hw_ver: "".to_string(),
-            is_usb: false,
-            latitude: None,
-            longitude: None,
-            mac: "".to_string(),
-            model: "".to_string(),
-            nickname: "".to_string(),
-            oem_id: "".to_string(),
-            on_time: 0,
-            original_device_id: "".to_string(),
-            overcurrent_status: OvercurrentStatus::Lifted,
-            overheat_status: None,
-            position: 1,
-            power_protection_status: PowerProtectionStatus::Normal,
-            region: None,
-            slot_number: 0,
-            status_follow_edge: false,
-            r#type: "".to_string(),
-        });
-        Ok(l)
-    }
-
-    #[cfg(test)]
-    async fn get_power_for_plug(&self, device_id: String) -> Result<CurrentPowerResult, Error> {
-        match device_id.as_ref() {
-            "456" => Ok(CurrentPowerResult { current_power: 45 }),
-            d => {
-                panic!("unexpected device_id {}", d);
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
 struct AppState {
     pub registry: Registry,
     power_use: Family<PowerUse, Gauge>,
     device_info: Family<DeviceInfo, Gauge>,
-    client: Client,
+    client: Box<dyn TapoClient + Send + Sync>,
 }
 
 impl AppState {
@@ -187,7 +102,7 @@ impl AppState {
         for child in child_device_list.into_iter() {
             let current_power = self
                 .client
-                .get_power_for_plug(child.device_id.clone())
+                .get_power_for_plug(child.device_id.as_ref())
                 .await?;
 
             self.power_use
@@ -235,7 +150,7 @@ async fn health() -> impl IntoResponse {
         .unwrap()
 }
 
-pub fn app(power_strip: Client) -> Router {
+pub fn app(power_strip: Box<dyn TapoClient + Send + Sync>) -> Router {
     let mut state = AppState {
         registry: Registry::default(),
         power_use: Family::default(),
@@ -262,18 +177,108 @@ pub fn app(power_strip: Client) -> Router {
 
 #[cfg(test)]
 mod test {
-    use super::Client;
+    use super::TapoClient;
     use super::app;
+    use async_trait::async_trait;
 
     use axum::body::Body;
     use axum::http::Request;
     use axum::http::StatusCode;
     use http_body_util::BodyExt;
+    use tapo::Error;
+    use tapo::responses::{
+        AutoOffStatus, ChargingStatus, CurrentPowerResult, DefaultPlugState,
+        DeviceInfoPowerStripResult, OvercurrentStatus, PowerProtectionStatus,
+        PowerStripPlugEnergyMonitoringResult,
+    };
     use tower::ServiceExt; // for `collect`
+
+    struct TestClient {}
+
+    #[async_trait]
+    impl TapoClient for TestClient {
+        async fn refresh_session(&mut self) -> Result<(), Error> {
+            Ok(())
+        }
+
+        async fn device_info(&self) -> Result<DeviceInfoPowerStripResult, Error> {
+            Ok(DeviceInfoPowerStripResult {
+                avatar: "".to_string(),
+                device_id: "123".to_string(),
+                fw_id: "".to_string(),
+                fw_ver: "".to_string(),
+                has_set_location_info: false,
+                hw_id: "".to_string(),
+                hw_ver: "".to_string(),
+                ip: "".to_string(),
+                lang: "".to_string(),
+                latitude: None,
+                longitude: None,
+                mac: "".to_string(),
+                model: "catwalk".to_string(),
+                oem_id: "".to_string(),
+                region: None,
+                rssi: 0,
+                signal_level: 0,
+                specs: "".to_string(),
+                ssid: "".to_string(),
+                time_diff: 0,
+                r#type: "".to_string(),
+            })
+        }
+
+        async fn child_devices(&self) -> Result<Vec<PowerStripPlugEnergyMonitoringResult>, Error> {
+            let mut l = Vec::new();
+            l.push(PowerStripPlugEnergyMonitoringResult {
+                auto_off_remain_time: 0,
+                auto_off_status: AutoOffStatus::On,
+                avatar: "".to_string(),
+                bind_count: 0,
+                category: "".to_string(),
+                default_states: DefaultPlugState::LastStates {},
+                charging_status: ChargingStatus::Finished,
+                device_id: "456".to_string(),
+                device_on: false,
+                fw_id: "".to_string(),
+                fw_ver: "".to_string(),
+                has_set_location_info: false,
+                hw_id: "".to_string(),
+                hw_ver: "".to_string(),
+                is_usb: false,
+                latitude: None,
+                longitude: None,
+                mac: "".to_string(),
+                model: "".to_string(),
+                nickname: "".to_string(),
+                oem_id: "".to_string(),
+                on_time: 0,
+                original_device_id: "".to_string(),
+                overcurrent_status: OvercurrentStatus::Lifted,
+                overheat_status: None,
+                position: 1,
+                power_protection_status: PowerProtectionStatus::Normal,
+                region: None,
+                slot_number: 0,
+                status_follow_edge: false,
+                r#type: "".to_string(),
+            });
+            Ok(l)
+        }
+
+        async fn get_power_for_plug(&self, device_id: &str) -> Result<CurrentPowerResult, Error> {
+            match device_id.as_ref() {
+                "456" => Ok(CurrentPowerResult { current_power: 45 }),
+                d => {
+                    panic!("unexpected device_id {}", d);
+                }
+            }
+        }
+    }
 
     #[tokio::test]
     async fn get_metrics() {
-        let app = app(Client { _client: None });
+        let client = Box::new(TestClient {});
+        let app = app(client);
 
         let response = app
             .oneshot(
@@ -303,7 +308,8 @@ mod test {
 
     #[tokio::test]
     async fn get_health() {
-        let app = app(Client { _client: None });
+        let client = Box::new(TestClient {});
+        let app = app(client);
 
         let response = app
             .oneshot(

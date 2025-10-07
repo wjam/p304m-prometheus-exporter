@@ -62,9 +62,10 @@ async fn main() {
                 .await
                 .unwrap();
 
-            let router = exporter::app(exporter::Client {
-                _client: Some(power_strip),
+            let client = Box::new(exporter::PowerStripClient {
+                client: power_strip,
             });
+            let router = exporter::app(client);
 
             let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}"))
                 .await
