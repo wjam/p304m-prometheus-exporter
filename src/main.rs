@@ -1,10 +1,11 @@
 mod exporter;
 mod health;
 
+use crate::exporter::TapoClient;
 use clap::{Command, CommandFactory, Parser, Subcommand};
 use clap_complete::aot::{Generator, Shell, generate};
 use std::io;
-use tapo::ApiClient;
+use tapo::{ApiClient, Error};
 
 #[derive(Parser)]
 #[command(arg_required_else_help = true, version = option_env!("VERSION").unwrap_or("dev-build"))]
@@ -31,9 +32,15 @@ enum Commands {
         #[arg(short, long, env = "TAPO_PASSWORD", hide_env_values = true)]
         password: String,
 
-        /// IP address or DNS name for the P304M device
-        #[arg(short, long, env = "IP_ADDRESS", hide_env_values = true)]
-        device_address: String,
+        /// IP address or DNS name for the devices
+        #[arg(
+            short,
+            long,
+            env = "IP_ADDRESS",
+            hide_env_values = true,
+            value_delimiter = ' '
+        )]
+        device_addresses: Vec<String>,
     },
     /// Generate shell auto-completions
     Completion {
@@ -55,17 +62,19 @@ async fn main() {
         Some(Commands::Server {
             username,
             password,
-            device_address,
+            device_addresses,
         }) => {
-            let power_strip = ApiClient::new(username, password)
-                .p304(device_address)
-                .await
-                .unwrap();
+            let mut clients: Vec<Box<dyn TapoClient + Send + Sync>> = Vec::new();
 
-            let client = Box::new(exporter::PowerStripClient {
-                client: power_strip,
-            });
-            let router = exporter::app(client);
+            for device_address in device_addresses {
+                let client = client_for_device(username, password, device_address)
+                    .await
+                    .unwrap();
+
+                clients.push(client);
+            }
+
+            let router = exporter::app(clients);
 
             let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}"))
                 .await
@@ -80,6 +89,40 @@ async fn main() {
         }
         None => {
             panic!("No command provided");
+        }
+    }
+}
+
+async fn client_for_device(
+    username: &str,
+    password: &str,
+    device_address: &str,
+) -> Result<Box<dyn TapoClient + Send + Sync>, Error> {
+    let client = ApiClient::new(username, password);
+    let device = client
+        .generic_device(device_address)
+        .await?
+        .get_device_info()
+        .await?;
+    match device.model.as_ref() {
+        "P304M" => {
+            let power_strip = ApiClient::new(username, password)
+                .p304(device_address)
+                .await?;
+
+            Ok(Box::new(exporter::PowerStripClient {
+                client: power_strip,
+            }))
+        }
+        "P110M" => {
+            let plug = ApiClient::new(username, password)
+                .p110(device_address)
+                .await?;
+
+            Ok(Box::new(exporter::PlugClient { client: plug }))
+        }
+        _ => {
+            panic!("Unknown model: {}", device.model);
         }
     }
 }
