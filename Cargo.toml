@@ -8,9 +8,9 @@ tokio = { version = "1.47.1", features = ["sync", "rt", "rt-multi-thread", "macr
 prometheus-client = "0.24.0"
 prometheus-client-derive-encode = "0.5.0"
 axum = "0.8.8"
-tower = "0.5.2"
-clap = { version = "4.5.53", features = ["derive", "env"] }
-clap_complete = "4.5.64"
+tower = "0.5.3"
+clap = { version = "4.5.60", features = ["derive", "env"] }
+clap_complete = "4.5.66"
 async-trait = "0.1.89"
 
 # Disable default-tls as it wants openssl installed
