@@ -6,13 +6,20 @@ on:
 permissions:
   contents: read
 
+concurrency: # Avoid needlessly continuing the workflow when there's a newer commit
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
+    name: Test
     runs-on: ubuntu-latest
 
     steps:
       - name: checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: 'false'
 
       - name: cache
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
@@ -37,3 +44,10 @@ jobs:
 
       - name: docker
         run: docker build .
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@b1d7e1fb5de872772f31590499237e7cce841e8e # v0.5.3
+        with:
+          advanced-security: 'false'
+          persona: auditor
+          annotations: 'true'
