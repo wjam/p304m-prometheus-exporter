@@ -13,8 +13,11 @@ concurrency: # Avoid needlessly continuing the workflow when there's a newer com
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+permissions: {} # Default to no permissions
+
 jobs:
   release:
+    name: Release
     runs-on: ubuntu-latest
     permissions:
       contents: read
