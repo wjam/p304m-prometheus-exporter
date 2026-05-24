@@ -4,7 +4,7 @@ mod health;
 use crate::exporter::TapoClient;
 use clap::{Command, CommandFactory, Parser, Subcommand};
 use clap_complete::aot::{Generator, Shell, generate};
-use std::io;
+use std::{error, io};
 use tapo::{ApiClient, Error};
 
 #[derive(Parser)]
@@ -50,14 +50,14 @@ enum Commands {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn error::Error>> {
     let cli = Cli::parse();
 
     let port = cli.port;
 
     match &cli.command {
         Some(Commands::Health {}) => {
-            health::health(port).await.unwrap();
+            Ok(health::health(port).await?)
         }
         Some(Commands::Server {
             username,
@@ -68,8 +68,7 @@ async fn main() {
 
             for device_address in device_addresses {
                 let client = client_for_device(username, password, device_address)
-                    .await
-                    .unwrap();
+                    .await?;
 
                 clients.push(client);
             }
@@ -77,15 +76,14 @@ async fn main() {
             let router = exporter::app(clients);
 
             let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}"))
-                .await
-                .unwrap();
+                .await?;
 
             println!("Server is listening on {port}");
-            axum::serve(listener, router).await.unwrap();
+            Ok(axum::serve(listener, router).await?)
         }
         Some(Commands::Completion { shell }) => {
             let mut cmd = Cli::command();
-            print_completions(*shell, &mut cmd);
+            Ok(print_completions(*shell, &mut cmd))
         }
         None => {
             panic!("No command provided");
