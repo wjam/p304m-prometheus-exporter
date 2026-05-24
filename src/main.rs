@@ -56,9 +56,7 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
     let port = cli.port;
 
     match &cli.command {
-        Some(Commands::Health {}) => {
-            Ok(health::health(port).await?)
-        }
+        Some(Commands::Health {}) => Ok(health::health(port).await?),
         Some(Commands::Server {
             username,
             password,
@@ -67,23 +65,22 @@ async fn main() -> Result<(), Box<dyn error::Error>> {
             let mut clients: Vec<Box<dyn TapoClient + Send + Sync>> = Vec::new();
 
             for device_address in device_addresses {
-                let client = client_for_device(username, password, device_address)
-                    .await?;
+                let client = client_for_device(username, password, device_address).await?;
 
                 clients.push(client);
             }
 
             let router = exporter::app(clients);
 
-            let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}"))
-                .await?;
+            let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
 
             println!("Server is listening on {port}");
             Ok(axum::serve(listener, router).await?)
         }
         Some(Commands::Completion { shell }) => {
             let mut cmd = Cli::command();
-            Ok(print_completions(*shell, &mut cmd))
+            print_completions(*shell, &mut cmd);
+            Ok(())
         }
         None => {
             panic!("No command provided");
