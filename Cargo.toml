@@ -3,7 +3,7 @@ name = "p304m-prometheus-exporter"
 edition = "2021"
 
 [dependencies]
-tapo = "0.8"
+tapo = "0.9"
 tokio = { version = "1.52.3", features = ["sync", "rt", "rt-multi-thread", "macros"] }
 prometheus-client = "0.24.1"
 prometheus-client-derive-encode = "0.5.0"
