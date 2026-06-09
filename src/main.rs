@@ -94,31 +94,17 @@ async fn client_for_device(
     device_address: &str,
 ) -> Result<Box<dyn TapoClient + Send + Sync>, Error> {
     let client = ApiClient::new(username, password);
-    let device = client
-        .generic_device(device_address)
-        .await?
-        .get_device_info()
-        .await?;
-    match device.model.as_ref() {
-        "P304M" => {
-            let power_strip = ApiClient::new(username, password)
-                .p304(device_address)
-                .await?;
 
-            Ok(Box::new(exporter::PowerStripClient {
-                client: power_strip,
-            }))
-        }
-        "P110M" => {
-            let plug = ApiClient::new(username, password)
-                .p110(device_address)
-                .await?;
+    let p304client = client.clone().p304(device_address).await?;
 
-            Ok(Box::new(exporter::PlugClient { client: plug }))
-        }
-        _ => {
-            panic!("Unknown model: {}", device.model);
-        }
+    // There's nothing in the API to peak at the device to find its type
+    // so just pick any one and check the model
+    match p304client.get_device_info().await?.model.as_str() {
+        "P110M" => Ok(Box::new(exporter::PlugClient {
+            client: client.p110(device_address).await?,
+        })),
+        "P304M" => Ok(Box::new(exporter::PowerStripClient { client: p304client })),
+        model => panic!("Unknown model: {}", model),
     }
 }
 
