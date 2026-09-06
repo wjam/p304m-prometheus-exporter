@@ -1,5 +1,8 @@
 # p304m-prometheus-exporter
 
+> [!NOTE]
+> This repository is no longer used as I found Home Assistant integration simpler.
+
 A [Prometheus](https://prometheus.io/) exporter for the tp-link
 [Tapo P304M Smart Wi-Fi Power Strip](https://www.tp-link.com/uk/home-networking/smart-plug/tapo-p304m/) or
 [Tapo P110M Smart Plug](https://www.tp-link.com/uk/home-networking/smart-plug/tapo-p110m/).
